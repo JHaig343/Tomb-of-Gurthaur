@@ -335,9 +335,9 @@ class Object:
 class Fighter:
     #combat-related properties and methods (monster, player, NPC).
     def __init__(self, hp, defense, power, xp, death_function=None):
-        self.max_hp = hp
+        self.base_max_hp = hp
         self.hp = hp
-        self.defense = defense
+        self.base_defense = defense
         self.base_power = power
         self.xp = xp
         self.death_function = death_function
@@ -787,6 +787,7 @@ def place_objects(room):
 
     item_chances['sword'] = from_dungeon_level([[5, 4]])
     item_chances['shield'] = from_dungeon_level([[15, 8]])
+    item_chances['helmet'] = from_dungeon_level([[30, 2]])
 
 
     #choose random number of monsters
@@ -850,8 +851,13 @@ def place_objects(room):
             
             elif choice == 'shield':
                 #create a shield
-                equipment_component = Equipment(slot = 'left hand', defense_bonus = 1)
+                equipment_component = Equipment(slot = 'left hand', defense_bonus = 2)
                 item = Object(x, y, '[', 'shield', libtcod.darker_cyan, equipment = equipment_component)
+            
+            elif choice == 'helmet':
+                #create a helmet
+                equipment_component = Equipment(slot = 'head', defense_bonus = 1)
+                item = Object(x, y, '&', 'helmet', libtcod.darker_cyan, equipment = equipment_component)
             #TODO: Add more scrolls/items here
             objects.append(item)
             item.send_to_back() #items appear below other objects
