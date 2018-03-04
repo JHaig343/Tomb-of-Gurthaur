@@ -56,6 +56,9 @@ LIGHTNING_RANGE = 5
 CONFUSE_NUM_TURNS = 10
 CONFUSE_RANGE = 8
 
+OAKSKIN_NUM_HITS = 5
+OAKSKIN_DEFENSE = 2
+
 FIREBALL_RADIUS = 3
 FIREBALL_DAMAGE = 25
 #dungeon colors
@@ -199,6 +202,8 @@ def render_all():
     render_bar(1, 1, BAR_WIDTH, 'HP', player.fighter.hp, player.fighter.max_hp, libtcod.light_red, libtcod.darker_red)
     
     libtcod.console_print_ex(panel, 1, 3, libtcod.BKGND_NONE, libtcod.LEFT, 'Dungeon level ' + str(dungeon_level))
+    if(stairs.x == player.x and stairs.y == player.y):
+        libtcod.console_print_ex(panel, 1, 0, libtcod.BKGND_NONE, libtcod.LEFT, 'Press X to go to the next level!')
 
     #display names of objects under the mouse
     libtcod.console_set_default_foreground(panel, libtcod.light_gray)
@@ -334,30 +339,47 @@ class Object:
 
 class Fighter:
     #combat-related properties and methods (monster, player, NPC).
-    def __init__(self, hp, defense, power, xp, death_function=None):
+    def __init__(self, hp, hp_buff, defense, defense_buff,  power, power_buff, buff_type, buff_charge, xp, death_function=None):
         self.base_max_hp = hp
         self.hp = hp
+        self.hp_buff = hp_buff
         self.base_defense = defense
+        self.defense_buff = defense_buff
         self.base_power = power
+        self.power_buff = power_buff
         self.xp = xp
+        self.buff_type = buff_type
+        self.buff_charge = buff_charge
         self.death_function = death_function
     
     #stat properties
     @property
     def power(self): #return actual power, by summing up the bonuses from all equipped items
         bonus = sum(equipment.power_bonus for equipment in get_all_equipped(self.owner))
-        return self.base_power + bonus
+        return self.base_power + self.power_buff + bonus
     
     @property
     def defense(self): #return actual defense, by summing up bonuses from all equipped items 
         bonus = sum(equipment.defense_bonus for equipment in get_all_equipped(self.owner))
-        return self.base_defense + bonus
+        return self.base_defense + self.defense_buff + bonus
 
     @property
     def max_hp(self): #return actuaL max hp, by summing up the bonuses from all equipped items
         bonus = sum(equipment.max_hp_bonus for equipment in get_all_equipped(self.owner))
-        return self.base_max_hp + bonus
+        return self.base_max_hp + self.hp_buff + bonus
+    
+    def remove_buff(self):
+        message('buff has worn off!', libtcod.yellow)
+        self.hp_buff = 0
+        self.power_buff = 0
+        self.defense_buff = 0
 
+    def update_buff(self, type):
+        if self.buff_type == type:
+            if self.buff_charge > 0:
+                self.buff_charge -= 1
+                if self.buff_charge == 0:
+                    self.remove_buff()
 
     def take_damage(self, damage):
         #apply damage if possible
@@ -375,8 +397,8 @@ class Fighter:
     
     def attack(self, target):
         #a simple formula for attack damage
-        damage = self.power - target.fighter.defense
-
+        damage = self.power - target.fighter.defense  
+        target.fighter.update_buff('shield')
         if damage > 0:
             #make target take some damage
             message( self.owner.name.capitalize() + " attacks " + target.name + " for " + str(damage) + " hit points.")
@@ -389,6 +411,9 @@ class Fighter:
         self.hp += amount
         if self.hp > self.max_hp:
             self.hp = self.max_hp
+    
+    
+
 
 
 class BasicMonster:
@@ -400,10 +425,13 @@ class BasicMonster:
             #move towards player if far away
             if monster.distance_to(player) >= 2:
                 monster.move_towards(player.x, player.y)
+                monster.fighter.update_buff('aura')
             
             #close enough, attack! (if player is still alive)
             elif player.fighter.hp > 0:
                 monster.fighter.attack(player)
+                
+                    
         
 class ConfusedMonster:
     #AI for a temporarily confused monster (reverts to previous AI after a while).
@@ -426,17 +454,19 @@ class ConfusedMonster:
 
 class Item:
     #an item that can be picked up and used.
-    def __init__(self, use_function = None):
+    def __init__(self, use_function = None, picked_up = False):
         self.use_function = use_function
+        self.picked_up = picked_up
 
     def pick_up(self):
         #add to the player's inventory and remove from the map
         if len(inventory) >= 26:
-            message('Your inventory is full, cannot picked up ' + self.owner.name + '.', libtcod.red)
+            message('Your inventory is full, cannot pick up ' + self.owner.name + '.', libtcod.red)
         else:
             inventory.append(self.owner)
             objects.remove(self.owner)
             message('You picked up a ' + self.owner.name + '!', libtcod.green)
+            self.picked_up = True
         
             #special case: automatically equip, if the corresponding equipment slot is unused
             equipment = self.owner.equipment
@@ -562,8 +592,7 @@ def random_choice(chances_dict):
 
 
 
-#monster_chances = {'orc': 80, 'troll': 20}
-#item_chances = {'heal': 70, 'lightning': 10, 'fireball': 10, 'confuse': 10}
+
 
 
 
@@ -577,6 +606,20 @@ def cast_heal():
         return 'cancelled'
     message('Your wounds start to feel better!', libtcod.light_violet)
     player.fighter.heal(HEAL_AMOUNT)
+  
+
+def cast_oakskin():
+    #give the player extra defense for a short time
+    message('You feel your skin harden as your defense is raised!', libtcod.light_cyan)
+    player.fighter.defense_buff = OAKSKIN_DEFENSE
+    player.fighter.buff_charge = OAKSKIN_NUM_HITS
+    player.fighter.buff_type = 'shield'
+    #message('Oakskin has worn off!', libtcod.yellow)
+    
+def remove_oakskin():
+    message('Oakskin has worn off!', libtcod.yellow)
+    player.fighter.base_defense = player.fighter.base_defense - OAKSKIN_DEFENSE
+
 
 def cast_lightning():
     #find closest enemy (inside a maximum range) and damage it
@@ -667,6 +710,7 @@ def player_move_or_attack(dx, dy):
         player.fighter.attack(target)
     else:
         player.move(dx, dy)
+        player.fighter.update_buff('aura')
         fov_recompute = True
 
 def player_death(player):
@@ -781,13 +825,14 @@ def place_objects(room):
     #chance of each item (by default they have a chance of 0 at level 1, which then goes up)
     item_chances = {}
     item_chances['heal'] = 35 #healing potion always shows up, even if all other items have 0 chance
+    item_chances['oakskin'] = 10 
     item_chances['lightning'] = from_dungeon_level([[25, 4]])
     item_chances['fireball'] = from_dungeon_level([[25, 6]])
     item_chances['confuse'] = from_dungeon_level([[10, 2]])
 
     item_chances['sword'] = from_dungeon_level([[5, 4]])
     item_chances['shield'] = from_dungeon_level([[15, 8]])
-    item_chances['helmet'] = from_dungeon_level([[30, 2]])
+    item_chances['helmet'] = from_dungeon_level([[10, 2]])
 
 
     #choose random number of monsters
@@ -801,12 +846,12 @@ def place_objects(room):
             choice = random_choice(monster_chances)
             if choice == 'orc': #80% chance of getting an orc
                 #create an orc
-                fighter_component = Fighter(hp = 20, defense = 0, power = 4, xp = 35, death_function = monster_death)
+                fighter_component = Fighter(hp = 20, hp_buff = 0, defense = 0, defense_buff = 0,  power = 4, power_buff = 0, buff_type = None, buff_charge = 0, xp = 35, death_function = monster_death)
                 ai_component = BasicMonster()
                 monster = Object(x, y, 'o', 'orc', libtcod.desaturated_green, blocks=True, fighter = fighter_component, ai = ai_component)
             elif choice == 'troll':
                 #create a troll
-                fighter_component = Fighter(hp = 30, defense = 2, power = 8, xp = 100, death_function = monster_death)
+                fighter_component = Fighter(hp = 30, hp_buff = 0, defense = 2, defense_buff = 0,  power = 8, power_buff = 0, buff_type = None, buff_charge = 0, xp = 100, death_function = monster_death)
                 ai_component = BasicMonster()
                 monster = Object(x, y, 'T', 'troll', libtcod.darker_green, blocks=True, fighter = fighter_component, ai = ai_component)
             
@@ -844,6 +889,12 @@ def place_objects(room):
 
                 item = Object(x, y, '#', 'scroll of confusion', libtcod.dark_fuchsia, item = item_component)
             
+            elif choice == 'oakskin':
+                #create an oakskin scroll(10% chance)
+                item_component = Item(use_function = cast_oakskin)
+
+                item = Object(x, y, '#', 'scroll of oakskin', libtcod.dark_blue, item = item_component)
+            
             elif choice == 'sword':
                 #create a sword
                 equipment_component = Equipment(slot = 'right hand', power_bonus = 3)
@@ -857,7 +908,7 @@ def place_objects(room):
             elif choice == 'helmet':
                 #create a helmet
                 equipment_component = Equipment(slot = 'head', defense_bonus = 1)
-                item = Object(x, y, '&', 'helmet', libtcod.darker_cyan, equipment = equipment_component)
+                item = Object(x, y, '^', 'helmet', libtcod.darker_cyan, equipment = equipment_component)
             #TODO: Add more scrolls/items here
             objects.append(item)
             item.send_to_back() #items appear below other objects
@@ -965,8 +1016,14 @@ def get_names_under_mouse():
     (x, y) = (mouse.cx, mouse.cy)
 
     #create a list with the names of all objects at the mouse's coordinates and in FOV
-    names = [obj.name for obj in objects if obj.x == x and obj.y == y and libtcod.map_is_in_fov(fov_map, obj.x, obj.y)]
-    
+    #start with objects that are not items(player, enemies, etc.)
+    names = [obj.name for obj in objects if obj.x == x and obj.y == y and obj.item == None and libtcod.map_is_in_fov(fov_map, obj.x, obj.y)]
+    #hide name of item until it is picked up, then reveal it if it's dropped for identification later
+    item_names_picked = [obj.name for obj in objects if obj.x == x and obj.y == y and obj.item != None and obj.item.picked_up == True and libtcod.map_is_in_fov(fov_map, obj.x, obj.y)]
+    item_names_unpicked = ["??" for obj in objects if obj.x == x and obj.y == y and obj.item != None and obj.item.picked_up == False and libtcod.map_is_in_fov(fov_map, obj.x, obj.y)]
+    #add the item names(both hidden and revealed) to master name list
+    names.extend(item_names_picked)
+    names.extend(item_names_unpicked)
     names = ', '.join(names) #join the names, separated by commas
     return names.capitalize()
 
@@ -1013,7 +1070,7 @@ def new_game():
     global player, inventory, game_msgs, game_state, dungeon_level
 
     #creating object representing player character
-    fighter_component = Fighter(hp = 100, defense = 1, power = 2, xp = 0, death_function = player_death)
+    fighter_component = Fighter(hp = 100, hp_buff = 0, defense = 1, defense_buff = 0, power = 2, power_buff = 0, buff_type = None, buff_charge = 0,  xp = 0, death_function = player_death)
     player = Object(0, 0, '@', 'player', libtcod.white, blocks=True, fighter = fighter_component)
 
     player.level = 1
@@ -1169,7 +1226,7 @@ def main_menu():
 
 libtcod.console_set_custom_font('arial10x10.png', libtcod.FONT_TYPE_GRAYSCALE | libtcod.FONT_LAYOUT_TCOD)
 #initialize window
-libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'Tomb of Gurthaur v. 1.0', False)
+libtcod.console_init_root(SCREEN_WIDTH, SCREEN_HEIGHT, 'Tomb of Gurthaur v. 1.2', False)
 #limit fps
 libtcod.sys_set_fps(LIMIT_FPS)
 #set up new console
