@@ -6,6 +6,9 @@
  
  ChangeLog:  
  
+ - v 1.3:
+    - added the ability to create a binary executable of the game for Windows systems. The executable can be found as **Kings.exe** in the **dist** folder. Alternatively, you can build the binary yourself by running the **binary.py** file. 
+ 
  - v 1.2:
     - added a new **buff** system
         - Fighter class now has 5 new parameters; power_buff, defense_buff, hp_buff, buff_type and buff_charge
