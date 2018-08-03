@@ -1,11 +1,18 @@
-#Requires Python 2 and libtcod (roguebasin.com)
+# Tomb of Gurthaur roguelike game
+# By Jacob Haig
+# Requires Python 2 and libtcod (roguebasin.com)
 # Simple Roguelike developed using libtcod
 #following RogueLike Tutorial with Python at Roguebasin.com
+#.-. .-. .  . .-.   .-. .-.   .-. . . .-. .-. . . .-. . . .-. 
+# |  | | |\/| |(    | | |-    |.. | | |(   |  |-| |-| | | |(  
+# '  `-' '  ` `-'   `-' '     `-' `-' ' '  '  ' ` ` ' `-' ' ' 
+                                                             
+
 import libtcodpy as libtcod
 import math
 import textwrap
 import shelve
-
+import random
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 
@@ -14,7 +21,7 @@ CHARACTER_SCREEN_WIDTH = 30
 
 #Health bars
 BAR_WIDTH = 20
-PANEL_HEIGHT = 7 
+PANEL_HEIGHT = 7
 PANEL_Y = SCREEN_HEIGHT - PANEL_HEIGHT
 
 #Experience and player level
@@ -26,7 +33,7 @@ INVENTORY_WIDTH = 50
 
 #Message log
 MSG_X = BAR_WIDTH + 2
-MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2 
+MSG_WIDTH = SCREEN_WIDTH - BAR_WIDTH - 2
 MSG_HEIGHT = PANEL_HEIGHT - 1
 
 #game fps
@@ -41,7 +48,10 @@ ROOM_MAX_SIZE = 10
 ROOM_MIN_SIZE = 6
 MAX_ROOMS = 30
 
-
+#BSP constants
+DEPTH = 10
+MIN_SIZE = 5
+FULL_ROOMS = True
 #vision algorithm constants
 FOV_ALGO = 0
 FOV_LIGHT_WALLS = True
@@ -141,6 +151,174 @@ def make_map():
     objects.append(stairs)
     stairs.send_to_back() #so it's drawn below the monsters
 
+#generates map using binary space partitioning(BSP)
+
+def make_bsp():
+    global map, objects, stairs, bsp_rooms
+
+    objects = [player]
+
+    map = [[Tile(True) for y in range(MAP_HEIGHT)] for x in range(MAP_WIDTH) ]
+
+    #Empty global list for storing room coordinates
+    bsp_rooms = []
+
+    #New root node
+    bsp = libtcod.bsp_new_with_size(0, 0, MAP_WIDTH, MAP_HEIGHT)
+
+    #Split into nodes
+    libtcod.bsp_split_recursive(bsp, 0, DEPTH, MIN_SIZE + 1, MIN_SIZE + 1, 1.5, 1.5 )
+
+    #Traverse the nodes and create rooms
+    libtcod.bsp_traverse_inverted_level_order(bsp, traverse_node)
+
+    #Random room for the stairs
+    stairs_location = random.choice(bsp_rooms)
+    bsp_rooms.remove(stairs_location)
+    stairs = Object(stairs_location[0], stairs_location[1], '<', 'stairs', libtcod.white, always_visible=True)
+    objects.append(stairs)
+    stairs.send_to_back()
+        
+    #Random room for player start
+    player_room = random.choice(bsp_rooms)
+    bsp_rooms.remove(player_room)
+    player.x = player_room[0]
+    player.y = player_room[1]
+
+    #Add monsters and items
+    for room in bsp_rooms:
+        new_room = Rect(room[0], room[1], 2, 2)
+        place_objects(new_room)
+
+    initialize_fov()
+
+
+def vline(map, x, y1, y2):
+    if y1 > y2:
+        y1,y2 = y2,y1
+    
+    for y in range(y1, y2 + 1):
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+
+def vline_up(map, x, y):
+    while y >= 0 and map[x][y].blocked == True:
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+        y -= 1
+
+def vline_down(map, x, y):
+    while y < MAP_HEIGHT and map[x][y].blocked == True:
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+        y += 1
+
+def hline(map, x1, y, x2):
+    if x1 > x2:
+        x1,x2 = x2,x1
+    for x in range(x1, x2 + 1):
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+
+def hline_left(map, x, y):
+    while x >= 0 and map[x][y].blocked == True:
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+        x -= 1
+
+def hline_right(map, x, y):
+    while x < MAP_WIDTH and map[x][y].blocked == True:
+        map[x][y].blocked = False
+        map[x][y].block_sight = False
+        x += 1
+
+
+
+
+
+
+def traverse_node(node, dat):
+    global map, bsp_rooms
+
+    #Create rooms
+    if libtcod.bsp_is_leaf(node):
+        minx = node.x + 1
+        print(node.x)
+        maxx = node.x + node.w - 1
+        miny = node.y + 1
+        maxy = node.y + node.h - 1
+
+        if maxx == MAP_WIDTH - 1:
+            maxx -= 1
+        if maxy == MAP_HEIGHT - 1:
+            maxy -= 1
+
+        #If it's False the rooms sizes are random, else the rooms are filled to the node's size
+        if FULL_ROOMS == False:
+            minx = libtcod.random_get_int(None, minx, maxx - MIN_SIZE + 1)
+            miny = libtcod.random_get_int(None, miny, maxy - MIN_SIZE + 1)
+            maxx = libtcod.random_get_int(None, minx + MIN_SIZE - 2, maxx)
+            maxy = libtcod.random_get_int(None, miny + MIN_SIZE - 2, maxy)
+
+        node.x = minx
+        node.y = miny
+        node.w = maxx - minx + 1
+        node.h = maxy - miny + 1
+
+        #Dig room
+        for x in range(minx, maxx + 1):
+            for y in range(miny, maxy + 1):
+                map[x][y].blocked = False
+                map[x][y].block_sight = False
+
+        #Add center coordinates to the list of rooms
+        bsp_rooms.append(((minx + maxx) / 2, (miny + maxy) / 2))
+    #Create corridors
+    else:
+        left = libtcod.bsp_left(node)
+        right = libtcod.bsp_right(node)
+        node.x = min(left.x, right.x)
+        node.y = min(left.y, right.y)
+        node.w = max(left.x + left.w, right.x + right.w) - node.x
+        node.h = max(left.y + left.h, right.y + right.h) - node.y
+        if node.horizontal:
+            if left.x + left.w - 1 < right.x or right.x + right.w - 1 < left.x:
+                x1 = libtcod.random_get_int(None, left.x, left.x + left.w - 1)
+                x2 = libtcod.random_get_int(None, right.x, right.x + right.w - 1)
+                y = libtcod.random_get_int(None, left.y + left.h, right.y)
+                vline_up(map, x1, y - 1)
+                hline(map, x1, y, x2)
+                vline_down(map, x2, y + 1)
+            else:
+                minx = max(left.x, right.x)
+                maxx = min(left.x + left.w - 1, right.x + right.w - 1)
+                x = libtcod.random_get_int(None, minx, maxx)
+
+                #catch out-of-bounds attempts
+                while x > MAP_WIDTH - 1:
+                    x -= 1
+                vline_down(map, x, right.y)
+                vline_up(map, x, right.y - 1)
+        else:
+            if left.y + left.h - 1 < right.y or right.y + right.h - 1 < left.y:
+                y1 = libtcod.random_get_int(None, left.y, left.y + left.h - 1)
+                y2 = libtcod.random_get_int(None, right.y, right.y + right.h - 1)
+                x = libtcod.random_get_int(None, left.x + left.w, right.x)
+                hline_left(map, x - 1, y1)
+                vline(map, x, y1, y2)
+                hline_right(map, x + 1, y2)
+            else:
+                miny = max(left.y, right.y)
+                maxy = min(left.y + left.h - 1, right.y + right.h - 1)
+                y = libtcod.random_get_int(None, miny, maxy)
+
+                #catch out-of-bounds attempts
+                while y > MAP_HEIGHT - 1:
+                    y -= 1
+                hline_left(map, right.x - 1, y)
+                hline_right(map, right.x, y)
+
+
 def render_all():
     global fov_map
     global color_dark_ground, color_light_ground
@@ -195,7 +373,7 @@ def render_all():
     for(line, color) in game_msgs:
         libtcod.console_set_default_foreground(panel, color)
         libtcod.console_print_ex(panel, MSG_X, y, libtcod.BKGND_NONE, libtcod.LEFT, line)
-        y += 1 
+        y += 1
 
 
     #show the player's stats
@@ -320,7 +498,7 @@ class Object:
         #make this object be drawn first, so all others appear above it if they're in the same tile
         global objects
         objects.remove(self)
-        objects.insert(0, self) 
+        objects.insert(0, self)
 
 
     def draw(self):
@@ -359,7 +537,7 @@ class Fighter:
         return self.base_power + self.power_buff + bonus
     
     @property
-    def defense(self): #return actual defense, by summing up bonuses from all equipped items 
+    def defense(self): #return actual defense, by summing up bonuses from all equipped items
         bonus = sum(equipment.defense_bonus for equipment in get_all_equipped(self.owner))
         return self.base_defense + self.defense_buff + bonus
 
@@ -397,7 +575,7 @@ class Fighter:
     
     def attack(self, target):
         #a simple formula for attack damage
-        damage = self.power - target.fighter.defense  
+        damage = self.power - target.fighter.defense
         target.fighter.update_buff('shield')
         if damage > 0:
             #make target take some damage
@@ -496,7 +674,7 @@ class Item:
         inventory.remove(self.owner)
         self.owner.x = player.x
         self.owner.y = player.y
-        message('You dropped a ' + self.owner.name + '.', libtcod.yellow) 
+        message('You dropped a ' + self.owner.name + '.', libtcod.yellow)
         
         
 
@@ -630,7 +808,7 @@ def cast_lightning():
 
     #zap it!
     message('A lightning bolt strikes the ' + monster.name + ' with a loud thunder! The damage is ' + str(LIGHTNING_DAMAGE) + ' hit points.', libtcod.light_blue)
-    monster.fighter.take_damage(LIGHTNING_DAMAGE) 
+    monster.fighter.take_damage(LIGHTNING_DAMAGE)
 
 def cast_confuse():
     #ask the player for a target to confuse
@@ -661,7 +839,7 @@ def cast_fireball():
 
 
 def is_blocked(x, y):
-    #first test the map tile   
+    #first test the map tile
     if map[x][y].blocked:
         return True
     #now check for any blocking objects
@@ -825,7 +1003,7 @@ def place_objects(room):
     #chance of each item (by default they have a chance of 0 at level 1, which then goes up)
     item_chances = {}
     item_chances['heal'] = 35 #healing potion always shows up, even if all other items have 0 chance
-    item_chances['oakskin'] = 10 
+    item_chances['oakskin'] = 10
     item_chances['lightning'] = from_dungeon_level([[25, 4]])
     item_chances['fireball'] = from_dungeon_level([[25, 6]])
     item_chances['confuse'] = from_dungeon_level([[10, 2]])
@@ -1063,7 +1241,7 @@ def from_dungeon_level(table):
     for(value, level) in reversed(table):
         if dungeon_level >= level:
             return value
-    return 0 
+    return 0
 
 
 def new_game():
@@ -1077,7 +1255,7 @@ def new_game():
 
     dungeon_level = 1 #resetting dungeon level
     #generate map(at this point it's not drawn on the screen)
-    make_map()
+    make_bsp()
     initialize_fov()
 
     game_state = 'playing'
@@ -1185,7 +1363,7 @@ def next_level():
 
     message('After a rare moment of peace, you descend deeper into the heart of the dungeon...', libtcod.red)
     dungeon_level += 1
-    make_map() #create a fresh new level!
+    make_bsp() #create a fresh new level!
     initialize_fov()
 
 

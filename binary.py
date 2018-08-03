@@ -6,7 +6,7 @@ import sys
 
 sys.argv.append('py2exe')
 
-#The filename of the cript you use to start your program
+#The filename of the script you use to start your program
 target_file = 'Kings.py'
 
 # The root directory containing your assets, libraries, etc.
@@ -49,5 +49,5 @@ opts = {'py2exe': {
     'compressed': 'True'    
 } }
 
-#Run the setup utility
-setup(console=[target_file], data_files = my_files, zipfile = None, options = opts)
+#Run the setup utility NEW: added Icon
+setup(console=[{'script': target_file, 'icon_resources': [(1, "Kings_Icon.ico")]}], data_files = my_files, zipfile = None, options = opts)
