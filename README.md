@@ -5,7 +5,14 @@
  Created using Roguebasin's complete roguelike tutorial: http://www.roguebasin.com/index.php?title=Complete_Roguelike_Tutorial,_using_python%2Blibtcod
  
  ChangeLog:  
- 
+ - v 1.4:
+    - Room generation is now performed using the **Binary Space partitioning module(BSP)** included with the libtcod library. The dungeon's appearance can be changed by tweaking the value of the **FULL_ROOMS** constant:
+        - A value of **True** will cause the rooms to fill their maximum node area. The dungeon will look more organized with no corridors.
+        - Likewise, a value of **False** will create more natural dungeons with many corridors.
+    - Added a **new icon** to the games executable file.
+    (Credit for icon goes to Chanut is Industries(https://www.iconfinder.com/icons/2913098/creature_dragon_dragon_egg_egg_fantasy_monster_rpg_icon), used under Creative Commons license(https://creativecommons.org/licenses/by/3.0/legalcode))
+    - Deleted the build folder as apparently it is only needed temporarily by py2exe for executable setup. 
+
  - v 1.3:
     - added the ability to create a binary executable of the game for Windows systems. The executable can be found as **Kings.exe** in the **dist** folder. Alternatively, you can build the binary yourself by running the **binary.py** file. 
  
